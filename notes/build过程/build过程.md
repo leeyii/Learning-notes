@@ -4,7 +4,7 @@
 
 ##Build日志
 我随便找了一个工程编译了一下, 可以再工程中如图地方看到log文件.
-![](/Users/lijie/Desktop/Snip20170830_2.png)
+![](https://github.com/leeyii/Learning-notes/blob/master/notes/build%E8%BF%87%E7%A8%8B/image/Snip20170830_2.png)
 默认情况下，上面的 Xcode 界面中隐藏了大量的信息，我们通过选择任务，然后点击右边的展开按钮，就能看到每个任务的详细信息。另外一种可选的方案就是选中列表中的一个或者多个任务，然后选择组合键 Cmd-C，这将会把所有的纯文本信息拷贝至粘贴板。最后，我们还可以选择 Editor 菜单中的 "Copy transcript for shown results"，以此将所有的 log 信息拷贝到粘贴板中。
 
 注意观察输出的 log 信息，首先会发现 log 信息被分为不同的几大块，它们与我们工程中的targets相互对应着：
@@ -40,7 +40,7 @@ Xcode 是如何知道哪些任务需要被执行？不要急,接着往下看.
 ##Build过程的控制
 
 
-![](/Users/lijie/Desktop/Snip20170831_3.png)
+![](https://github.com/leeyii/Learning-notes/blob/master/notes/build%E8%BF%87%E7%A8%8B/image/Snip20170831_3.png)
 
 我们选中一个project会在 project editor 顶部显示出 6 个 tabs：General, Capabilities, Info, Build Settings, Build Phases 以及 Build Rules。
 后面的三个选项与build过程紧密相连.
