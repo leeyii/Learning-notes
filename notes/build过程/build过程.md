@@ -1,9 +1,34 @@
 #Build 过程
 
+##关于build system
+build system将我们的源码和资源文件转变为app.
+在开发工程中当你进行以下行为时都会调用build system:
+
+>* Build, run, test, profile, analyze, or archive your project.
+>* Use Xcode Server to perform continuous integration of your projects.
+>* Use the xcodebuild command-line tool outside of Xcode.
+
+每次调用build system构建就是执行一系列有序的任务.最常见的就是 调用命令行工具编译和link源文件; 执行文件操作,例如复制文件; 或者执行自定义的文件处理,例如生成Info.plist文件
+
+####交互
+有以下几个部分可以对build system地道影响作用.
+
+* Workspaces:用来管理多个Project.[iOS使用Workspace来管理多项目](http://www.jianshu.com/p/b6c59d8ed2c9)
+* Projects
+* Schemes
+* Actions
+* Targets
+* Build settings
+* Build configurations
+* Build phases
+* Build rules 
+* Build configuration (xcconfig) files
+
+
 当我使用Xcode点击运行按钮到程序运行起来发生了什么?
 
 ##Build日志
-我随便找了一个工程编译了一下, 可以再工程中如图地方看到log文件.
+我随便找了一个工程编译了一下, 可以在工程中如图地方看到log文件.
 ![](https://github.com/leeyii/Learning-notes/blob/master/notes/build%E8%BF%87%E7%A8%8B/image/Snip20170830_2.png)
 默认情况下，上面的 Xcode 界面中隐藏了大量的信息，我们通过选择任务，然后点击右边的展开按钮，就能看到每个任务的详细信息。另外一种可选的方案就是选中列表中的一个或者多个任务，然后选择组合键 Cmd-C，这将会把所有的纯文本信息拷贝至粘贴板。最后，我们还可以选择 Editor 菜单中的 "Copy transcript for shown results"，以此将所有的 log 信息拷贝到粘贴板中。
 
