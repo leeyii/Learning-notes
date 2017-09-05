@@ -11,7 +11,7 @@ build system将我们的源码和资源文件转变为app.
 每次调用build system构建就是执行一系列有序的任务.最常见的就是 调用命令行工具编译和link源文件; 执行文件操作,例如复制文件; 或者执行自定义的文件处理,例如生成Info.plist文件
 
 ##工作流程
-![](/Users/lijie/Desktop/bs_buildsystemworkflow_diagram.png)
+![](https://github.com/leeyii/Learning-notes/blob/master/notes/build%E8%BF%87%E7%A8%8B/image/bs_buildsystemworkflow_diagram.png)
 
 1. 确定build target
 2. 检索build configurations, build settings, build phases, and build rules.
