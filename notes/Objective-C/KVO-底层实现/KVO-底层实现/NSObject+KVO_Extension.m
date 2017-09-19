@@ -163,7 +163,13 @@ static Class kvo_class(id self, SEL _cmd) {
 
 - (void)kvo_removeObserver:(id)observer {
     NSMutableDictionary *observers = [self allObserversDic];
-    
+    [observers enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, NSMutableArray * arr, BOOL * _Nonnull stop) {
+        for (_ObserverInfo *info in arr) {
+            if (info.observer == observer) {
+                [arr removeObject:info];
+            }
+        }
+    }];
 }
 
 - (Class)createPairClass {

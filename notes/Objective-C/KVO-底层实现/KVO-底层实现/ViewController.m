@@ -11,30 +11,6 @@
 #import <objc/runtime.h>
 #import "NSObject+KVO_Extension.h"
 
-static int a;
-
-@interface ClassA : NSObject
-
-//@property (nonatomic , strong) ClassA next;
-
-@end
-
-@implementation ClassA
-
-void tes() {
-     NSLog(@"1");
-}
-
-static int c;
-
-- (void) method1 {
-    c = 2;
-    a = 2;
-    
-}
-
-@end
-
 
 @interface ViewController ()
 
@@ -48,16 +24,12 @@ static int b;
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Do any additional setup after loading the view, typically from a nib.
-    a = 1;
-    b = 2;
-    c = 3;
+
     Person *p = [Person new];
     Person *son = [Person new];
     p.son = son;
-    tes();
     
     [p kvo_addObserver:self forKeyPath:@"name" options:NSKeyValueObservingOptionNew context:nil];
-    
     
     p.name = @"10";
 }
