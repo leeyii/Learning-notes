@@ -1,0 +1,395 @@
+#ReactiveCocoa学习笔记<三> RACSignal基本操作
+
+##filter: 过滤
+
+过滤原始信号,如果满足过滤条件转发这个信号,否则忽略这个信号.
+
+示例代码:
+
+		RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@"zhao"];
+        
+        [subscriber sendNext:@"wang"];
+        
+        [subscriber sendNext:@"qian"];
+        
+        [subscriber sendNext:@"wei"];
+        
+        
+        return [[RACDisposable alloc] init];
+    }]
+                         filter:^BOOL(id  _Nullable value) {
+                             if ([value hasPrefix:@"w"]) {
+                                 return YES;
+                             } else {
+                                 return NO;
+                             }
+    }];
+    
+    [signal subscribeNext:^(id  _Nullable x) {
+        NSLog(@"x : %@", x);
+    }];
+	
+输出:
+
+	2017-09-29 16:27:41.273049+0800 RAC[7343:336413] x : wang
+	2017-09-29 16:27:41.273326+0800 RAC[7343:336413] x : wei
+
+实现:
+
+	- (__kindof RACStream *)filter:(BOOL (^)(id value))block {
+		NSCParameterAssert(block != nil);
+	
+		Class class = self.class;
+		
+		return [[self flattenMap:^ id (id value) {
+			if (block(value)) {
+				return [class return:value];
+			} else {
+				return class.empty;
+			}
+		}] setNameWithFormat:@"[%@] -filter:", self.name];
+	}
+
+如果满足过滤条件返回一个调用`-[RACReturnSignal return:]` 直接同步发送信号,否则返回一个`RACEmptySignal`
+
+#####RACReturnSignal
+
+	+ (RACSignal *)return:(id)value {
+	
+	
+		RACReturnSignal *signal = [[self alloc] init];
+		signal->_value = value;
+		
+		#ifdef DEBUG
+		[signal setNameWithFormat:@"+return: %@", value];
+		#endif
+		
+		return signal;
+	}
+	- (RACDisposable *)subscribe:(id<RACSubscriber>)subscriber {
+		NSCParameterAssert(subscriber != nil);
+		
+			return [RACScheduler.subscriptionScheduler schedule:^{
+			[subscriber sendNext:self.value];
+			[subscriber sendCompleted];
+		}];
+	}
+
+上面是一个return信号的实现,在创建过程中保存了vulue,当此信号被订阅时,直接发送value并调用完成信号.  
+
+####RACEmptySignal
+
+	+ (RACSignal *)empty {
+	#ifdef DEBUG
+		// Create multiple instances of this class in DEBUG so users can set custom
+		// names on each.
+		return [[[self alloc] init] setNameWithFormat:@"+empty"];
+	#else
+		static id singleton;
+		static dispatch_once_t pred;
+	
+		dispatch_once(&pred, ^{
+			singleton = [[self alloc] init];
+		});
+	
+		return singleton;
+	#endif
+	}
+	
+	#pragma mark Subscription
+	
+	- (RACDisposable *)subscribe:(id<RACSubscriber>)subscriber {
+		NSCParameterAssert(subscriber != nil);
+	
+		return [RACScheduler.subscriptionScheduler schedule:^{
+			[subscriber sendCompleted];
+		}];
+	}
+	
+上面就是一个空信号的实现,在这个信号被调用时什么也不做直接调用完成信号, 注意在这里区分了release版本和DEBUG版本, 在release版本使用一个单例实现RACEmptySignal.
+
+所以通过`RACReturnSignal` `RACEmptySignal` 两个信号对过滤进行转发和忽略.
+
+---
+
+##ignore: 忽略
+忽略指定的值   
+示例代码:
+
+		RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+	        [subscriber sendNext:@"wang"];
+	        [subscriber sendNext:@"li"];
+	        [subscriber sendNext:@"fang"];
+	        [subscriber sendNext:@"wang"];
+	        return [[RACDisposable alloc] init];
+	    }] ignore:@"wang"];
+	    
+	    
+	    [signal subscribeNext:^(id  _Nullable x) {
+	        NSLog(@"x : %@", x);
+	    }];
+输出:
+
+	2017-09-29 17:11:37.726000+0800 RAC[7881:371770] x : li
+	2017-09-29 17:11:37.726229+0800 RAC[7881:371770] x : fang
+	
+实现:- (__kindof RACStream *)ignore:(id)value {
+	return [[self filter:^ BOOL (id innerValue) {
+		return innerValue != value && ![innerValue isEqual:value];
+	}] setNameWithFormat:@"[%@] -ignore: %@", self.name, RACDescription(value)];
+}
+
+内部是对filter方法的封装, 内部是使用指针地址和 `- isEqual:`方法判断两个值是否相等, 如果两个值相等则忽略调这个值.
+
+---
+
+
+##reduceEach:
+block参数的个数是动态的,根据元组中的元素个数变化,block每个参数和元组中的每个元素一一对应. block的返回值是根据元组中的元素映射的一个值,其中的逻辑可以根据需求而定.
+
+示例代码:
+
+	    RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+	        [subscriber sendNext:RACTuplePack(@1, @2)];
+	        [subscriber sendNext:RACTuplePack(@3, @4)];
+	        return [[RACDisposable alloc] init];
+	    }] reduceEach:^id _Nullable (id value1, id value2){
+	        
+	        return @([value1 integerValue] + [value2 integerValue]);
+	    }];
+	    
+	    [signal subscribeNext:^(id _Nullable x) {
+	        NSLog(@"%ld", [x integerValue]);
+	    }];
+	    
+
+输出:
+
+	2017-10-03 19:24:33.999636+0800 RAC[28155:1726872] 3
+	2017-10-03 19:24:33.999854+0800 RAC[28155:1726872] 7
+
+源码:
+
+	- (__kindof RACStream *)reduceEach:(id (^)())reduceBlock {
+		NSCParameterAssert(reduceBlock != nil);
+	
+		__weak RACStream *stream __attribute__((unused)) = self;
+		return [[self map:^(RACTuple *t) {
+			NSCAssert([t isKindOfClass:RACTuple.class], @"Value from stream %@ is not a tuple: %@", stream, t);
+			return [RACBlockTrampoline invokeBlock:reduceBlock withArguments:t];
+		}] setNameWithFormat:@"[%@] -reduceEach:", self.name];
+	}
+
+在源码中有两个断言,一个断言是reduceBlock不能为空,另一个是信号的值必须为RACTuple类型.
+
+reduceEach:内部是对map方法的封装,根据mapBlock的入参返回`[RACBlockTrampoline invokeBlock:reduceBlock withArguments:t]`.  
+
+RACBlockTrampoline根据入参RACTuple的count调用block,返回调用block的返回值.
+
+	+ (id)invokeBlock:(id)block withArguments:(RACTuple *)arguments {
+		NSCParameterAssert(block != NULL);
+		//保存block
+		RACBlockTrampoline *trampoline = [[self alloc] initWithBlock:block];
+		return [trampoline invokeWithArguments:arguments];
+	}
+	
+	- (id)invokeWithArguments:(RACTuple *)arguments {
+		// 根据arguments数量选中SEL
+		SEL selector = [self selectorForArgumentCount:arguments.count];
+		// 根据SEL创建NSInvocation
+		NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:[self methodSignatureForSelector:selector]];
+		invocation.selector = selector;
+		invocation.target = self;
+	
+		for (NSUInteger i = 0; i < arguments.count; i++) {
+			id arg = arguments[i];
+			NSInteger argIndex = (NSInteger)(i + 2);
+			// 入参赋值
+			[invocation setArgument:&arg atIndex:argIndex];
+		}
+		// 方法调用
+		[invocation invoke];
+		
+		__unsafe_unretained id returnVal;
+		// 获取调用返回值
+		[invocation getReturnValue:&returnVal];
+		return returnVal;
+	}
+	
+	- (SEL)selectorForArgumentCount:(NSUInteger)count {
+		NSCParameterAssert(count > 0);
+	
+		switch (count) {
+			case 0: return NULL;
+			case 1: return @selector(performWith:);
+			case 2: return @selector(performWith::);
+			case 3: return @selector(performWith:::);
+			case 4: return @selector(performWith::::);
+			case 5: return @selector(performWith:::::);
+			case 6: return @selector(performWith::::::);
+			case 7: return @selector(performWith:::::::);
+			case 8: return @selector(performWith::::::::);
+			case 9: return @selector(performWith:::::::::);
+			case 10: return @selector(performWith::::::::::);
+			case 11: return @selector(performWith:::::::::::);
+			case 12: return @selector(performWith::::::::::::);
+			case 13: return @selector(performWith:::::::::::::);
+			case 14: return @selector(performWith::::::::::::::);
+			case 15: return @selector(performWith:::::::::::::::);
+		}
+	
+		NSCAssert(NO, @"The argument count is too damn high! Only blocks of up to 15 arguments are currently supported.");
+		return NULL;
+	}
+	// 具体实现
+	- (id)performWith:(id)obj1 {
+		id (^block)(id) = self.block;
+		return block(obj1);
+	}
+	
+	- (id)performWith:(id)obj1 :(id)obj2 {
+		id (^block)(id, id) = self.block;
+		return block(obj1, obj2);
+	}
+	以此类推...
+
+首先根据元组中元素的数量决定调用的SEL,然后动态创建NSInvocation,并调用他.
+
+在给NSInvocation入参赋值是从i+2的位置开始给入参赋值,是因为前两个入参分别为id self和SEL _cmd.
+
+在具体实现中是调用block,block的入参是元组的元素,返回值就是reduceBlock的返回值,由开发者返回.
+
+---
+
+##startWith:
+
+在第一个信号前插入一个信号.
+
+实例代码:
+
+    RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@1];
+        [subscriber sendNext:@2];
+        [subscriber sendNext:@3];
+        return [RACDisposable new];
+    }] startWith:@0];
+    
+    [signal subscribeNext:^(id  _Nullable x) {
+        NSLog(@"x: %@", [x stringValue]);
+    }];
+
+输出:
+
+	2017-10-03 20:53:04.191798+0800 RAC[29045:1780844] x: 0
+	2017-10-03 20:53:04.191962+0800 RAC[29045:1780844] x: 1
+	2017-10-03 20:53:04.192030+0800 RAC[29045:1780844] x: 2
+	2017-10-03 20:53:04.192129+0800 RAC[29045:1780844] x: 3
+
+源码:
+
+	- (__kindof RACStream *)startWith:(id)value {
+		return [[[self.class return:value]
+			concat:self]
+			setNameWithFormat:@"[%@] -startWith: %@", self.name, RACDescription(value)];
+	}
+
+内部由concat方法实现,新建一个RACSignal直接返回value,然后concat原始的信号.前面说过concat的实现,所以信号stream的顺序是先发送value,然后发送原始信号.
+
+---
+
+##skip: 
+
+跳过前n个信号.
+
+示例代码:
+
+    RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@1];
+        [subscriber sendNext:@2];
+        [subscriber sendNext:@3];
+        [subscriber sendNext:@4];
+        [subscriber sendNext:@5];
+        [subscriber sendNext:@6];
+        return [RACDisposable new];
+    }] skip:3];
+    
+    [signal subscribeNext:^(id  _Nullable x) {
+        NSLog(@"x: %@", [x stringValue]);
+    }];
+
+输出:
+
+	2017-10-03 21:00:43.366280+0800 RAC[29217:1787626] x: 4
+	2017-10-03 21:00:43.366462+0800 RAC[29217:1787626] x: 5
+	2017-10-03 21:00:43.366585+0800 RAC[29217:1787626] x: 6
+
+源码:
+
+	- (__kindof RACStream *)skip:(NSUInteger)skipCount {
+		Class class = self.class;
+		
+		return [[self bind:^{
+			__block NSUInteger skipped = 0;
+	
+			return ^(id value, BOOL *stop) {
+				if (skipped >= skipCount) return [class return:value];
+	
+				skipped++;
+				return class.empty;
+			};
+		}] setNameWithFormat:@"[%@] -skip: %lu", self.name, (unsigned long)skipCount];
+	}
+
+使用skipped记录跳过的数量,每忽略一次信号skipped+1,直到sikpped>=skipcount.
+
+---
+
+##take:
+
+接受前n个信号.
+
+示例代码:
+
+    RACSignal *signal = [[RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@1];
+        [subscriber sendNext:@2];
+        [subscriber sendNext:@3];
+        [subscriber sendNext:@4];
+        [subscriber sendNext:@5];
+        [subscriber sendNext:@6];
+        return [RACDisposable new];
+    }] take:3];
+    
+    [signal subscribeNext:^(id  _Nullable x) {
+        NSLog(@"x: %@", [x stringValue]);
+    }];
+
+输出:
+
+	2017-10-03 21:12:43.774690+0800 RAC[29460:1801547] x: 1
+	2017-10-03 21:12:43.774919+0800 RAC[29460:1801547] x: 2
+	2017-10-03 21:12:43.775051+0800 RAC[29460:1801547] x: 3
+
+
+源码:
+
+	- (__kindof RACStream *)take:(NSUInteger)count {
+		Class class = self.class;
+		
+		if (count == 0) return class.empty;
+	
+		return [[self bind:^{
+			__block NSUInteger taken = 0;
+	
+			return ^ id (id value, BOOL *stop) {
+				if (taken < count) {
+					++taken;
+					if (taken == count) *stop = YES;
+					return [class return:value];
+				} else {
+					return nil;
+				}
+			};
+		}] setNameWithFormat:@"[%@] -take: %lu", self.name, (unsigned long)count];
+	}
