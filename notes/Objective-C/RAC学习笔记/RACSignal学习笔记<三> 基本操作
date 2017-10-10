@@ -345,6 +345,48 @@ RACBlockTrampoline根据入参RACTuple的count调用block,返回调用block的�
 
 ---
 
+##skipUntilBlock:
+
+	- (__kindof RACStream *)skipUntilBlock:(BOOL (^)(id x))predicate {
+		NSCParameterAssert(predicate != nil);
+	
+		Class class = self.class;
+		
+		return [[self bind:^{
+			__block BOOL skipping = YES;
+	
+			return ^ id (id value, BOOL *stop) {
+				if (skipping) {
+					if (predicate(value)) {
+						skipping = NO;
+					} else {
+						return class.empty;
+					}
+				}
+	
+				return [class return:value];
+			};
+		}] setNameWithFormat:@"[%@] -skipUntilBlock:", self.name];
+	}
+
+skipUntilBlock:以predicate闭包作为筛选条件,当筛选条件为NO是跳过此信号,直到筛选条件为YES后面所有的信号都不跳过.
+
+---
+
+##skipWhileBlock:
+
+	- (__kindof RACStream *)skipWhileBlock:(BOOL (^)(id x))predicate {
+		NSCParameterAssert(predicate != nil);
+	
+		return [[self skipUntilBlock:^ BOOL (id x) {
+			return !predicate(x);
+		}] setNameWithFormat:@"[%@] -skipWhileBlock:", self.name];
+	}
+
+skipWhileBlock:的信号集是skipUntilBlock:的信号集的补集。全集是原信号。skipWhileBlock:底层还是调用skipUntilBlock:，只不过判断条件的是不满足predicate( )闭包的集合。
+
+---
+
 ##take:
 
 接受前n个信号.
@@ -393,3 +435,289 @@ RACBlockTrampoline根据入参RACTuple的count调用block,返回调用block的�
 			};
 		}] setNameWithFormat:@"[%@] -take: %lu", self.name, (unsigned long)count];
 	}
+
+---
+
+##takeUntilBlock:
+
+	- (__kindof RACStream *)takeUntilBlock:(BOOL (^)(id x))predicate {
+		NSCParameterAssert(predicate != nil);
+	
+		Class class = self.class;
+		
+		return [[self bind:^{
+			return ^ id (id value, BOOL *stop) {
+				if (predicate(value)) return nil;
+	
+				return [class return:value];
+			};
+		}] setNameWithFormat:@"[%@] -takeUntilBlock:", self.name];
+	}
+
+takeUntilBlock:是根据传入的predicate闭包作为筛选条件的。一旦predicate( )闭包满足条件，那么新信号停止发送新信号，因为它被置为nil了。和函数名的意思是一样的，take原信号的值，Until直到闭包满足条件。
+
+---
+
+##takeWhileBlock:
+
+	- (__kindof RACStream *)takeWhileBlock:(BOOL (^)(id x))predicate {
+		NSCParameterAssert(predicate != nil);
+	
+		return [[self takeUntilBlock:^ BOOL (id x) {
+			return !predicate(x);
+		}] setNameWithFormat:@"[%@] -takeWhileBlock:", self.name];
+	}
+
+takeWhileBlock:的信号集是takeUntilBlock:的信号集的补集。全集是原信号。takeWhileBlock:底层还是调用takeUntilBlock:，只不过判断条件的是不满足predicate( )闭包的集合。
+
+---
+
+##takeUntil:
+
+	- (RACSignal *)takeUntil:(RACSignal *)signalTrigger {
+		return [[RACSignal createSignal:^(id<RACSubscriber> subscriber) {
+			RACCompoundDisposable *disposable = [RACCompoundDisposable compoundDisposable];
+			void (^triggerCompletion)(void) = ^{
+				[disposable dispose];
+				[subscriber sendCompleted];
+			};
+	
+			RACDisposable *triggerDisposable = [signalTrigger subscribeNext:^(id _) {
+				triggerCompletion();
+			} completed:^{
+				triggerCompletion();
+			}];
+	
+			[disposable addDisposable:triggerDisposable];
+	
+			if (!disposable.disposed) {
+				RACDisposable *selfDisposable = [self subscribeNext:^(id x) {
+					[subscriber sendNext:x];
+				} error:^(NSError *error) {
+					[subscriber sendError:error];
+				} completed:^{
+					[disposable dispose];
+					[subscriber sendCompleted];
+				}];
+	
+				[disposable addDisposable:selfDisposable];
+			}
+	
+			return disposable;
+		}] setNameWithFormat:@"[%@] -takeUntil: %@", self.name, signalTrigger];
+	}
+
+当signalTrigger sendNext 或 sendCompleted时调用triggerCompletion闭包.阻断原信号.
+
+---
+
+##takeUntilReplacement:
+
+	- (RACSignal *)takeUntilReplacement:(RACSignal *)replacement {
+	    return [RACSignal createSignal:^(id<RACSubscriber> subscriber) {
+	        RACSerialDisposable *selfDisposable = [[RACSerialDisposable alloc] init];
+	        
+	        RACDisposable *replacementDisposable = [replacement subscribeNext:^(id x) {
+	            [selfDisposable dispose];
+	            [subscriber sendNext:x];
+	        } error:^(NSError *error) {
+	            [selfDisposable dispose];
+	            [subscriber sendError:error];
+	        } completed:^{
+	            [selfDisposable dispose];
+	            [subscriber sendCompleted];
+	        }];
+	        
+	        if (!selfDisposable.disposed) {
+	            selfDisposable.disposable = [[self
+	                                          concat:[RACSignal never]]
+	                                         subscribe:subscriber];
+	        }
+	        
+	        return [RACDisposable disposableWithBlock:^{
+	            [selfDisposable dispose];
+	            [replacementDisposable dispose];
+	        }];
+	    }];
+	}
+
+原始信号concat一个[RACSignal never]信号,这样可以保证原始信号完成不会调用新的信号的completed,可以一直等待
+replacement信号.
+
+当接收到replacement信号时,取消原来信号的订阅,由replacement信号代替原来的信号.
+
+新的信号在没有接受到replacement信号时,信号由原始信号发送(不会发送sendCompleted信号),直到接收到replacement信号后,新的信号由replacement信号发送
+
+
+---
+
+##+zip:
+
+压缩多个信号,与-zip作业相同,不过-zip只能压缩俩个信号,+zip可以压缩多个信号.
+
+示例代码:
+
+	RACSignal *signal1 = [RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@1];
+        [subscriber sendNext:@1];
+        return [[RACDisposable alloc] init];
+    }];
+    RACSignal *signal2 = [RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@2];
+        [subscriber sendNext:@1];
+        return [[RACDisposable alloc] init];
+    }];
+    RACSignal *signal3 = [RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@3];
+        [subscriber sendNext:@1];
+        return [[RACDisposable alloc] init];
+    }];
+    RACSignal *signal4 = [RACSignal createSignal:^RACDisposable * _Nullable(id<RACSubscriber>  _Nonnull subscriber) {
+        [subscriber sendNext:@4];
+        [subscriber sendNext:@1];
+        return [[RACDisposable alloc] init];
+    }];
+    
+    RACSignal *ziped = [RACSignal zip:RACTuplePack(signal1, signal2, signal3, signal4)];
+    
+    [ziped subscribeNext:^(id  _Nullable x) {
+        
+        NSLog(@"x : %@", x);
+    }];
+
+输出:
+
+	2017-10-04 11:24:58.416203+0800 RAC[2168:55396] x : <RACTuple: 0x60c0000197a0> (
+	    1,
+	    2,
+	    3,
+	    4
+	)
+	2017-10-04 11:24:58.416827+0800 RAC[2168:55396] x : <RACTuple: 0x604000019d60> (
+	    1,
+	    1,
+	    1,
+	    1
+	)
+
+源码:
+
+	+ (__kindof RACStream *)zip:(id<NSFastEnumeration>)streams {
+		return [[self join:streams block:^(RACStream *left, RACStream *right) {
+			return [left zipWith:right];
+		}] setNameWithFormat:@"+zip: %@", streams];
+	}
+
++zip是对+join: block:方法的封装.
+
+	+ (__kindof RACStream *)join:(id<NSFastEnumeration>)streams block:(RACStream * (^)(id, id))block {
+	    
+		RACStream *current = nil;
+	
+		// Creates streams of successively larger tuples by combining the input
+		// streams one-by-one.
+		for (RACStream *stream in streams) {
+			// For the first stream, just wrap its values in a RACTuple. That way,
+			// if only one stream is given, the result is still a stream of tuples.
+			if (current == nil) {
+	            
+				current = [stream map:^(id x) {
+					return RACTuplePack(x);
+				}];
+	
+				continue;
+			}
+	        // 调用 外部block 关联两个block的逻辑关系
+			current = block(current, stream);
+		}
+	
+		if (current == nil) return [self empty];
+	    
+		return [current map:^(RACTuple *xs) {
+			// Right now, each value is contained in its own tuple, sorta like:
+			//
+			// (((1), 2), 3)
+			//
+			// We need to unwrap all the layers and create a tuple out of the result.
+			NSMutableArray *values = [[NSMutableArray alloc] init];
+	
+			while (xs != nil) {
+				[values insertObject:xs.last ?: RACTupleNil.tupleNil atIndex:0];
+				xs = (xs.count > 1 ? xs.first : nil);
+			}
+	
+			return [RACTuple tupleWithObjectsFromArray:values];
+		}];
+	}
+
+第一个信号的值用元组包裹,接着调用block依次zip后面的信号到current中.
+
+此时信号中的每一个值由多层元组包裹,`(((1), 2), 3)` 像这样.
+
+最后将多层元组重新整理,变成单层元组.
+
+---
+
+##+zip:reduce
+
++zip:方法和reduceEach:方法的结合.
+
+	+ (__kindof RACStream *)zip:(id<NSFastEnumeration>)streams reduce:(id (^)())reduceBlock {
+		NSCParameterAssert(reduceBlock != nil);
+	
+		RACStream *result = [self zip:streams];
+	
+		// Although we assert this condition above, older versions of this method
+		// supported this argument being nil. Avoid crashing Release builds of
+		// apps that depended on that.
+		if (reduceBlock != nil) result = [result reduceEach:reduceBlock];
+	
+		return [result setNameWithFormat:@"+zip: %@ reduce:", streams];
+	}
+
+如果理解+zip和reduceEach的实现这个就很好理解了,这里就不在详细说明了.
+
+--- 
+
+##scanWithStart: reduceWithIndex:
+
+	- (__kindof RACStream *)scanWithStart:(id)startingValue reduceWithIndex:(id (^)(id, id, NSUInteger))reduceBlock {
+		NSCParameterAssert(reduceBlock != nil);
+	
+		Class class = self.class;
+	
+		return [[self bind:^{
+			__block id running = startingValue;
+			__block NSUInteger index = 0;
+	
+			return ^(id value, BOOL *stop) {
+				running = reduceBlock(running, value, index++);
+				return [class return:running];
+			};
+		}] setNameWithFormat:@"[%@] -scanWithStart: %@ reduceWithIndex:", self.name, RACDescription(startingValue)];
+	}
+
+底层是由bind方法实现的,startingValue在block第一次调用的时候是running的值,running和next的逻辑关系由开发者自己实现,running总是指向block的返回值.
+
+---
+
+##distinctUntilChanged
+
+	- (__kindof RACStream *)distinctUntilChanged {
+		Class class = self.class;
+	
+		return [[self bind:^{
+			__block id lastValue = nil;
+			__block BOOL initial = YES;
+	
+			return ^(id x, BOOL *stop) {
+				if (!initial && (lastValue == x || [x isEqual:lastValue])) return [class empty];
+	
+				initial = NO;
+				lastValue = x;
+				return [class return:x];
+			};
+		}] setNameWithFormat:@"[%@] -distinctUntilChanged", self.name];
+	}
+
+distinctUntilChanged的实现是用bind来完成的。每次变换中都记录一下原信号上一次发送过来的值，并与这一次进行比较，如果是相同的值，就“吞”掉，返回empty信号。只有和原信号上一次发送的值不同，变换后的新信号才把这个值发送出来。
