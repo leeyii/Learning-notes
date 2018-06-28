@@ -1,4 +1,4 @@
-# LLDB
+# LLDB学习总结
 
 > LLDB 是一个有着 REPL 的特性和 C++ ,Python 插件的开源调试器。LLDB 绑定在 Xcode 内部，存在于主窗口底部的控制台中。调试器允许你在程序运行的特定时暂停它，你可以查看变量的值，执行自定的指令，并且按照你所认为合适的步骤来操作程序的进展
 
@@ -142,7 +142,52 @@ LLDB的命令遵循唯一匹配原则：假如根据前n个字母已经能唯一
 
 ## watchpoit
 
-使用lldb也可以实现变量的监听。当我们关心某个类实例变量何时被修改，如果使用属性修改实例变量的值时，我们可以在setter方法中打断点或者在
+使用lldb也可以实现变量的监听。当我们关心某个类实例变量何时被修改，如果使用属性修改实例变量的值时，我们可以在setter方法中打断点或者直接在属性上面打上断点，都能够监听变量改变，但是有时候直接通过修改实例变量修改，不会调用setter方法。
+
+那么如何监听这个实例变量被改变了呢，我们可以通过监视这个实例变量的地址的写入。
+
+下面示例代码：
+
+	class Person {
+	    
+	    var name: String!
+	    
+	}
+
+如果希望监听`Person`实例变量`name`的改变
+
+		let person = Person()
+        // 在这里打上断点
+        person.name = "john"
+        
+        person.name = "toms"
+
+控制台
+
+	(lldb) watchpoint set variable -s 8 -- person.name
+	Watchpoint created: Watchpoint 1: addr = 0x6000004468b0 size = 8 state = enabled type = w
+	    declare @ '/Users/blade/Desktop/LLDBTest/LLDBTest/ViewController.swift:26'
+	    watchpoint spec = 'person.name'
+	    new value: ""
+
+当`person.name`的值被修改的时候会程序会暂停，但是我在试验的遇到一个问题，第一次修改的时候new value总是空的，我也不知道是为什么。
+
+	// 监听属性修改时，控制台打印
+	Watchpoint 1 hit:
+	old value: ""
+	new value: ""
+	
+	Watchpoint 1 hit:
+	old value: ""
+	new value: "toms"
+
+
+注意在OC中需要通过`watchpoint set variable -s 8 -- person->_name`这种方式去监听变量的变化。
+
+## 总结
+
+lldb是非常强大的，如果掌握的这些方法，能够极大提高解决bug的效率。
+
 
 
 ##引用
